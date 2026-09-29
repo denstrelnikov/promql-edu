@@ -168,7 +168,7 @@ OrderHub + Clickhouse + DiskUsageCritical
 python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" projects/foo/values-vmalert-vm.yaml
 ```
 
-Или `helm lint` (как в CI) — глава 10.
+Структуру groups/rules проверяйте по примерам в `examples/` и review.
 
 ## 4.10. Типичные ошибки YAML + PromQL
 

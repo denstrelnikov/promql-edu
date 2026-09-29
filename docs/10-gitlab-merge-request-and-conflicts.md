@@ -1,216 +1,76 @@
-# 10. GitLab: ветка, Merge Request, CI, конфликты
+# 10. Git: ветка, commit, Merge Request
 
-В репозитории конфигурации алертинга (например **external-monitoring**) изменения попадают в prod через **Git**: ветка → MR → review → merge в `master`.  
-**Validate** (helm lint) запускается на MR и на master. **Деплой** после merge автоматизирован — в обычном процессе не требуется ручной `helm upgrade` от автора MR.
+Изменения в конфигурации алертов попадают в среду через Git: вы работаете в **своей ветке**, открываете **Merge Request** в основную ветку (обычно `master`), проходите **review у лида**, после merge всё остальное (проверки в CI, выкат конфигурации) выполняется **автоматически**. Ручной деплой от автора MR не требуется.
 
-## 10.1. Предварительные условия
+## 10.1. Подготовка
 
-- Доступ к GitLab репозиторию (clone по HTTPS/SSH).
-- Права на создание веток и MR.
-- Локально: git, опционально helm (lint как CI).
+Обновите основную ветку и создайте ветку под задачу (имя — как принято у команды, например `TASK-123-clickhouse-alerts`):
 
 ```bash
-git clone git@gitlab.example.com:infra/external-monitoring.git
-cd external-monitoring
 git checkout master
 git pull origin master
+git checkout -b TASK-123-clickhouse-alerts
 ```
 
-## 10.2. Ветка под задачу
+## 10.2. Правки и commit
 
-Имя ветки — по соглашению команды, часто:
-
-```text
-MNTR-123_clickhouse-alerts
-feature/order-hub-kafka-lag
-```
-
-```bash
-git checkout -b MNTR-123_clickhouse-alerts
-```
-
-Одна ветка = одна логическая задача (или связанный набор правил одного project).
-
-## 10.3. Правки только нужных файлов
-
-| Задача | Файлы |
-|--------|--------|
-| Алерт в существующем project | `projects/<name>/values-vmalert-vm.yaml` и/или `-thanos.yaml` |
-| Новый project | новая папка + `shared/values-alertmanager.yaml` |
-| Новый канал / route | `shared/values-alertmanager.yaml` |
-
-Перед commit:
+Внесите изменения в нужные YAML-файлы (см. главу 05). Перед commit полезно посмотреть diff:
 
 ```bash
 git status
 git diff
 ```
 
-Убедитесь, что нет случайных правок и секретов.
-
-## 10.4. Commit и push
+Зафиксируйте изменения:
 
 ```bash
 git add projects/order-hub/values-vmalert-vm.yaml
-git commit -m "MNTR-123: ClickHouse infra alerts for order-hub"
-git push -u origin MNTR-123_clickhouse-alerts
+git commit -m "TASK-123: add ClickHouse infra alerts"
 ```
 
-## 10.5. Создание MR
+Сообщение commit — коротко **что** и **зачем**; номер задачи — если используете трекер.
 
-GitLab → **Create merge request** → target **`master`**.
+## 10.3. Push и Merge Request
 
-Шаблон описания:
+Отправьте ветку на remote:
 
-```markdown
-## Задача
-MNTR-123 — ClickHouse order-hub-analytics-ch-cl1, prod1, health + disk
-
-## Datasource
-vmselect (проверено в Explore, скрин / имя datasource: ...)
-
-## Изменения
-- projects/order-hub/values-vmalert-vm.yaml
-- группа: order-hub-clickhouse-infra
-- алерты: OrderHubClickhouseExporterDown, ... (полный список)
-
-## Out of scope
-- PostgreSQL, Kafka — не трогались
-
-## Checklist
-- [x] helm lint локально / CI
-- [x] expr без синтаксических ошибок
+```bash
+git push -u origin TASK-123-clickhouse-alerts
 ```
 
-Assignee / reviewer — по правилам команды.
+В веб-интерфейсе Git hosting (GitLab и аналоги): **Create merge request** → целевая ветка **`master`**.  
+Назначьте ревьюера (лид / ответственный за репозиторий). Кратко опишите суть в описании MR — по договорённости в команде.
 
-## 10.6. CI pipeline (validate)
+## 10.4. Review и merge
 
-Stage **validate** в `.gitlab-ci.yml`:
+Лид оставляет комментарии — вы правите код **в той же ветке**, делаете commit и снова `git push`. MR обновляется сам.
 
-1. helm + pull charts (alertmanager, keep, victoria-metrics-alert).
-2. `helm lint` на shared values.
-3. Цикл `helm lint` по **каждому** `projects/*/values-vmalert-*.yaml`.
+После approve лид (или вы, если есть права) нажимает **Merge**. Дальше pipeline и доставка конфигурации в кластер идут **без ваших действий**.
 
-Pipeline на **merge_request_event** и на **master**.
+## 10.5. Конфликт с master
 
-CI **не** проверяет PromQL на live metrics.
-
-После merge конфигурация применяется **автоматически** (org-specific pipeline на `master`).
-
-Ручной деплой, kubeconfig и helm upgrade **не входят** в стандартный цикл автора MR: ваша ответственность — корректный YAML, зелёный **validate**, пройденный review.  
-Проверку «алерт появился в vmalert» выполняют после выката по главе 11 (если есть доступ к кластеру).
-
-## 10.7. Review и merge
-
-Комментарии → commits в ветку → push.  
-Merge после approve и зелёного pipeline.
-
-## 10.8. Если pipeline красный не из‑за вашего файла
-
-Lint проходит по **всем** `projects/*/values-vmalert-*.yaml`.  
-Если упал чужой project — варианты: rebase на master (fix уже merged), сообщить maintainer, **не** «чинить» чужой project без задачи.
-
-Если упал **ваш** файл — читайте вывод `helm lint`: номер строки, `Error:`, YAML indentation.
-
-## 10.9. Конфликты с master
+Если MR нельзя смержить — в `master` уже изменили те же файлы. Локально:
 
 ```bash
 git fetch origin
-git checkout MNTR-123_clickhouse-alerts
+git checkout TASK-123-clickhouse-alerts
 git merge origin/master
 ```
 
-Маркеры в файле:
+Git пометит конфликтные участки маркерами `<<<<<<<`, `=======`, `>>>>>>>`. Откройте файл в редакторе:
 
-```yaml
-<<<<<<< HEAD
-... ваша версия ...
-=======
-... master ...
->>>>>>> origin/master
-```
-
-**Обе группы алертов** (если обе нужны) — оставить подряд в `groups:`:
-
-```yaml
-        - name: order-hub-kafka
-          rules: [...]
-        - name: order-hub-clickhouse-infra
-          rules: [...]
-```
-
-Конфликт **внутри одной группы** — объединить списки `- alert:` под одним `name` / `interval`.
-
-`shared/values-alertmanager.yaml`: сохранить **оба** route и **оба** receiver.
+- для **двух новых групп алертов** оставьте **обе** группы под `groups:` подряд;
+- для **одной группы** объедините списки `- alert:` под одним `name:` и `interval:`;
+- удалите все маркеры conflict.
 
 ```bash
-git add <files>
+git add <исправленные-файлы>
 git commit -m "Resolve merge conflict with master"
 git push
 ```
 
-Не оставлять conflict markers. Не удалять чужие rules без согласования.
-
-### Пример: оба добавили группу в конец `groups`
-
-Master добавил kafka-группу, вы — clickhouse. Итог в файле:
-
-```yaml
-      groups:
-        # ... существующие группы без изменений ...
-        - name: order-hub-kafka
-          interval: 30s
-          rules:
-            - alert: OrderHubKafkaConsumerLagHigh
-              ...
-        - name: order-hub-clickhouse-infra
-          interval: 30s
-          rules:
-            - alert: OrderHubClickhouseExporterDown
-              ...
-```
-
-Проверьте отступ `groups:` — он должен совпадать с остальным файлом (часто 6 пробелов до `- name:`).
-
-### Пример: конфликт в одной группе
-
-Два разработчика добавили **разные** `- alert:` в `order-hub-postgres-infra`.  
-Объедините под одним `name:` / `interval:`:
-
-```yaml
-        - name: order-hub-postgres-infra
-          interval: 30s
-          rules:
-            - alert: OrderHubPostgresExporterDown
-              ...
-            - alert: OrderHubPostgresDiskUsageCritical
-              ...
-            - alert: OrderHubPostgresNewAlertFromMaster
-              ...
-            - alert: OrderHubPostgresNewAlertFromBranch
-              ...
-```
-
-Порядок алертов внутри `rules` не важен для vmalert.
-
-## 10.10. Rebase (опционально)
-
-```bash
-git rebase origin/master
-git push --force-with-lease
-```
-
-Только если так принято в команде.
-
-## 10.11. Чеклист MR
-
-- [ ] Актуальный master в ветке (merge/rebase).
-- [ ] Explore проверен на datasource из values.
-- [ ] groups/rules структура корректна.
-- [ ] Pipeline validate зелёный.
-- [ ] Конфликты разрешены.
+Если команда использует rebase вместо merge — действуйте по её правилам (`git rebase origin/master`, затем push).
 
 ---
 
-Далее: [11-debugging-alerts.md](11-debugging-alerts.md).
+Далее — отладка уже выкатанных правил: [11-debugging-alerts.md](11-debugging-alerts.md).

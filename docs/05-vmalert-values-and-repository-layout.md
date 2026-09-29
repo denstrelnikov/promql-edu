@@ -4,8 +4,7 @@
 
 - правила per-project vmalert;
 - общий Alertmanager;
-- CI, который **lint'ит** YAML на MR и master;
-- автоматическое применение в K8s после merge (без ручного шага в обычном flow).
+- автоматическую проверку и выкат после merge (см. главу 10).
 
 ## 5.1. Дерево каталогов
 
@@ -41,7 +40,7 @@ server:
     url: "http://vmselect-secondary.acme.example:8481/select/0/prometheus"
 
   notifier:
-    url: "http://alertmanager.external-monitoring.svc.cluster.local:9093"
+    url: "http://alertmanager.alerting-platform.svc.cluster.local:9093"
 
   extraArgs:
     httpListenAddr: :8880
@@ -107,7 +106,7 @@ Alertmanager матчит `project="order-hub"` → receiver.
 | `order-hub-kafka` | lag, stalled |
 | `order-hub-clickhouse-infra` | CH health, disk |
 
-Одна **задача Jira** не обязана создавать все группы — добавляете **одну** группу или дополняете существующую.
+Одна задача не обязана создавать все группы — добавляете **одну** группу или дополняете существующую.
 
 ## 5.6. Изменение shared vs projects
 
@@ -117,36 +116,18 @@ Alertmanager матчит `project="order-hub"` → receiver.
 | Новый Telegram канал для project | `shared/values-alertmanager.yaml` |
 | Новый project с нуля | папка `projects/` + route + receiver в shared |
 
-MR с shared требует более внимательного review (секреты webhook/token — masked variables в GitLab, не в git).
+Изменения в `shared/` (маршруты, webhook) согласуйте с владельцем репозитория; секреты не коммитят в git.
 
-## 5.7. CI validate (пример: external-monitoring)
-
-Pipeline stage **validate**:
-
-```yaml
-helm lint alertmanager -f shared/values-alertmanager.yaml
-helm lint keep -f shared/values-keephq.yaml
-for f in projects/*/values-vmalert-*.yaml; do
-  helm lint victoria-metrics-alert -f "$f"
-done
-```
-
-Триггеры: **merge request** и **master**.
-
-**CI не выполняет PromQL** против live metrics — только структура chart + values.
-
-После merge в master деплой конфигурации в кластер выполняется **автоматически** (отдельный процесс/org-specific); в MR вам нужно **зелёный validate** и code review.
-
-## 5.8. Новый project — минимальный набор изменений
+## 5.7. Новый project — минимальный набор изменений
 
 1. `mkdir projects/new-service`
 2. Скопировать values с похожего сервиса, поменять `external.label`, datasource URL при необходимости.
 3. В `shared/values-alertmanager.yaml`:
    - route `project="new-service"` → receiver `new-service-all`
    - receiver с telegram_configs / mattermost_configs
-4. MR, lint, merge.
+4. MR и review (глава 10).
 
-## 5.9. Связь с examples/
+## 5.8. Связь с examples/
 
 Файл [examples/order-hub-values-vmalert-vm.yaml](../examples/order-hub-values-vmalert-vm.yaml) — сокращённый, но **структурно корректный** образец.
 

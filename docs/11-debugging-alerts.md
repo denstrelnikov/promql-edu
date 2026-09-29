@@ -11,7 +11,7 @@ Explore (метрика есть?)
                     → Telegram / Mattermost (integration logs)
 ```
 
-Деплой после merge **автоматический** — если правило не появилось сразу, подождите завершения pipeline на master или уточните у platform SRE типичную задержку (минуты).
+После merge конфигурация подхватывается **автоматически** — если правило не видно сразу, подождите несколько минут.
 
 ---
 
@@ -78,7 +78,7 @@ up{
 ### Port-forward
 
 ```bash
-kubectl port-forward -n external-monitoring \
+kubectl port-forward -n alerting-platform \
   svc/vmalert-order-hub-vm-victoria-metrics-alert-server 8880:8880
 ```
 
@@ -108,7 +108,7 @@ curl -s http://localhost:8880/api/v1/alerts | jq '.data.alerts[] | select(.label
 
 ### Группы нет в API
 
-- MR не merged / pipeline master failed.
+- Merge ещё не прошёл или выкат не завершился.
 - Правили не тот project file.
 - Helm release другого project (опечатка folder name vs external.label).
 
@@ -117,7 +117,7 @@ curl -s http://localhost:8880/api/v1/alerts | jq '.data.alerts[] | select(.label
 ## 11.4. Alertmanager
 
 ```bash
-kubectl port-forward -n external-monitoring svc/alertmanager 9093:9093
+kubectl port-forward -n alerting-platform svc/alertmanager 9093:9093
 curl -s http://localhost:9093/api/v2/alerts | jq '.[] | {alertname: .labels.alertname, project: .labels.project, receiver: .receivers[0].name}'
 ```
 
@@ -149,7 +149,7 @@ UI AM → Silences. Maintenance мог заглушить `alertname` или `se
 Разные `*\_configs` в receiver. Логи AM:
 
 ```bash
-kubectl logs -n external-monitoring alertmanager-0 --tail=100 | grep -i telegram
+kubectl logs -n alerting-platform alertmanager-0 --tail=100 | grep -i telegram
 ```
 
 Часто: HTML entity, неверный `chat_id`, revoked bot token.
@@ -185,21 +185,7 @@ kubectl logs -n external-monitoring alertmanager-0 --tail=100 | grep -i telegram
 
 ---
 
-## 11.8. Локальный helm lint (как CI)
-
-```bash
-helm repo add vm https://victoriametrics.github.io/helm-charts/
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo add keephq https://keephq.github.io/helm-charts
-helm repo update
-helm pull vm/victoria-metrics-alert --version 0.49.0 --untar --untardir /tmp/charts
-helm pull prometheus-community/alertmanager --version 2.0.0 --untar --untardir /tmp/charts
-helm lint /tmp/charts/victoria-metrics-alert -f projects/order-hub/values-vmalert-vm.yaml
-```
-
----
-
-## 11.9. Тест доставки (осторожно)
+## 11.8. Тест доставки (осторожно)
 
 В **личной ветке** (не merge в master без удаления):
 
@@ -213,7 +199,7 @@ alert: OrderHubDeliveryTestRemoveMe
 
 ---
 
-## 11.10. Сводная таблица
+## 11.9. Сводная таблица
 
 | Explore | rules API | alerts API | AM | Chat |
 |---------|-----------|------------|-----|------|

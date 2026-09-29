@@ -76,7 +76,7 @@ Scrape interval 30s. Почему `[1m]` для `rate()` в алерте — п�
 
 ---
 
-## 12.6. Kafka MR block
+## 12.6. Kafka — блок YAML
 
 Задача: lag sum > 10000, `for` 15m, topic `orders-status-changed`, CG `kafka_consumer_order_hub_prod`, service `shared-events-kfk-cl1`, project order-hub.
 

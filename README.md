@@ -28,7 +28,7 @@
 | 07 | [docs/07-kubernetes-alerts.md](docs/07-kubernetes-alerts.md) | kube-state, cAdvisor, rollout, ресурсы |
 | 08 | [docs/08-infra-metrics-pg-kafka-ch-redis.md](docs/08-infra-metrics-pg-kafka-ch-redis.md) | PostgreSQL, pgBackRest, Kafka, ClickHouse, Redis |
 | 09 | [docs/09-designing-alert-coverage.md](docs/09-designing-alert-coverage.md) | Как закрыть задачу мониторинга без лишнего scope |
-| 10 | [docs/10-gitlab-merge-request-and-conflicts.md](docs/10-gitlab-merge-request-and-conflicts.md) | Ветка, MR, CI `helm lint`, разрешение конфликтов |
+| 10 | [docs/10-gitlab-merge-request-and-conflicts.md](docs/10-gitlab-merge-request-and-conflicts.md) | Ветка, commit, push, MR, review, конфликты |
 | 11 | [docs/11-debugging-alerts.md](docs/11-debugging-alerts.md) | Explore → vmalert → Alertmanager → уведомления |
 | 12 | [docs/12-exercises.md](docs/12-exercises.md) | Задачи с разбором |
 | A | [docs/appendix-a-labels-and-naming.md](docs/appendix-a-labels-and-naming.md) | Соглашения по labels, портам, именам алертов |
@@ -44,5 +44,5 @@
 1. Глава 00–03 — понимание PromQL.  
 2. Глава 04–05 — куда класть правило в YAML.  
 3. Grafana Explore — проверить expr на нужном datasource.  
-4. Глава 10 — MR; дождаться зелёного pipeline.  
-5. Глава 11 — после merge убедиться, что правило в vmalert и маршрут не `drop`.
+4. Глава 10 — commit, push, MR, review у лида.  
+5. Глава 11 — при необходимости проверить алерт после автоматического выката.

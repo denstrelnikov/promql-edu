@@ -11,7 +11,7 @@ server:
     url: "http://vmselect-secondary.acme.example:8481/select/0/prometheus"
 
   notifier:
-    url: "http://alertmanager.external-monitoring.svc.cluster.local:9093"
+    url: "http://alertmanager.alerting-platform.svc.cluster.local:9093"
 
   extraArgs:
     httpListenAddr: :8880

@@ -63,7 +63,7 @@ Exporter + node exporter, readonly, disk, optional replication.
 
 ## 9.6. Дублирование
 
-Перед MR:
+Перед commit:
 
 ```bash
 grep -n "alert: OrderHub" projects/order-hub/values-vmalert-vm.yaml
@@ -86,8 +86,8 @@ grep -n "alert: OrderHub" projects/order-hub/values-vmalert-vm.yaml
 - Группа `order-hub-clickhouse-infra`, interval 30s.
 - 5–8 rules (exporter, node, readonly, disk w/c).
 - Комментарий с именем БД.
-- MR, green CI, review, merge.
-- Проверка по главе 11.
+- MR и review у лида (глава 10).
+- При необходимости — проверка по главе 11.
 
 ## 9.9. Anti-goals
 
