@@ -1,0 +1,80 @@
+# Фрагмент для разбора на занятии — намеренно сломан.
+# Задание: найти ошибки и переписать как в order-hub-values-vmalert-vm.yaml
+
+server:
+  config:
+    alerts:
+      groups:
+        - name: order-hub-kafka
+          interval: 30s
+          rules:
+            - alert: OrderHubKafkaConsumerLagHigh
+              expr: sum(kafka_consumergroup_lag{service="shared-events-kfk-cl1"}) > 10000
+              for: 15m
+              labels:
+                severity: warning
+                source: vmselect
+
+# ========= ClickHouse =========
+
+        - alert: order_hubClickhouseDown
+          expr: >-
+            up{
+              service="order-hub-analytics-ch-cl1",
+              environment="prod1",
+              job="clickhouse",
+            } == 0
+          for: 5m
+          labels:
+            severity: critical
+            source: vmselect
+            service: api-order-hub
+          annotations:
+            summary: "ClickHouse down"
+            description: >-
+              Instance {{ $labels.instance }} down.
+            HAProxy: order-hub-analytics-ch-cl1-haproxy.db.acme.example.
+
+        - alert: order_hubClickhouseDiskUsageCritical
+          expr: >-
+            max by (instance) (
+              (1 - node_filesystem_avail_bytes{
+                service="order-hub-analytics-ch-cl1",
+                environment="prod1",
+                job="node",
+                ,
+                fstype!~"tmpfs"
+              }
+              / node_filesystem_size_bytes{
+                service="order-hub-analytics-ch-cl1",
+                environment="prod1",
+                job="node",
+                ,
+                fstype!~"tmpfs"
+              }) * 100
+            ) > 90
+          for: 5m
+          labels:
+            severity: critical
+            source: vmselect
+          annotations:
+            summary: "disk critical"
+
+        - alert: OrderHubPostgresDiskUsageCritical
+          expr: >-
+            max by (instance) (
+              (1 - node_filesystem_avail_bytes{
+                service="order-hub-pgsql-cl1",
+                job="node",
+                instance=~"order-hub-pgsql-cl1-[0-9]+.*:9100"
+              }
+              / node_filesystem_size_bytes{
+                service="order-hub-pgsql-cl1",
+                job="node",
+                instance=~"order-hub-pgsql-cl1-[0-9]+.*:9100"
+              }) * 100
+            ) > 90
+          for: 5m
+          labels:
+            severity: critical
+            source: vmselect

@@ -1,0 +1,294 @@
+# Пример фрагмента Helm values (вымышленные имена Acme / order-hub).
+# Полный файл в battle repo длиннее; здесь — эталон структуры групп.
+
+server:
+  replicaCount: 2
+
+  datasource:
+    url: "http://vmselect-primary.acme.example:8481/select/0/prometheus"
+
+  remoteRead:
+    url: "http://vmselect-secondary.acme.example:8481/select/0/prometheus"
+
+  notifier:
+    url: "http://alertmanager.external-monitoring.svc.cluster.local:9093"
+
+  extraArgs:
+    httpListenAddr: :8880
+    external.label: "project=order-hub"
+
+  config:
+    alerts:
+      groups:
+        # --- K8s API ---
+        - name: order-hub-api-k8s
+          interval: 30s
+          rules:
+            - alert: OrderHubApiReplicasUnavailable
+              expr: >-
+                max by (cluster, namespace, deployment) (
+                  kube_deployment_status_replicas_available{
+                    namespace="order-hub-prod1",
+                    cluster=~"k8s-prd-alpha|k8s-prd-beta",
+                    deployment="order-hub-api"
+                  }
+                )
+                <
+                max by (cluster, namespace, deployment) (
+                  kube_deployment_spec_replicas{
+                    namespace="order-hub-prod1",
+                    cluster=~"k8s-prd-alpha|k8s-prd-beta",
+                    deployment="order-hub-api"
+                  }
+                )
+                unless on(cluster, namespace, deployment) (
+                  max by (cluster, namespace, deployment) (
+                    kube_deployment_status_observed_generation{
+                      namespace="order-hub-prod1",
+                      cluster=~"k8s-prd-alpha|k8s-prd-beta",
+                      deployment="order-hub-api"
+                    }
+                    != kube_deployment_metadata_generation{
+                      namespace="order-hub-prod1",
+                      cluster=~"k8s-prd-alpha|k8s-prd-beta",
+                      deployment="order-hub-api"
+                    }
+                  )
+                )
+              for: 5m
+              labels:
+                severity: critical
+                source: vmselect
+                service: order-hub-api
+              annotations:
+                summary: "order-hub-api [{{ $labels.cluster }}]: мало реплик"
+                description: >-
+                  Deployment order-hub-api не в полном составе >5m.
+
+        # --- PostgreSQL order-hub-pgsql-cl1 ---
+        - name: order-hub-postgres-infra
+          interval: 30s
+          rules:
+            - alert: OrderHubPostgresExporterDown
+              expr: >-
+                up{
+                  service="order-hub-pgsql-cl1",
+                  environment="prod1",
+                  job="postgres",
+                  instance=~"order-hub-pgsql-cl1-[0-9]+.*:9187"
+                } == 0
+              for: 5m
+              labels:
+                severity: critical
+                source: vmselect
+                service: order-hub-pgsql-cl1
+              annotations:
+                summary: "Postgres exporter down — {{ $labels.instance }}"
+                description: >-
+                  Нода {{ $labels.instance }} не отдаёт метрики.
+                  HAProxy: order-hub-pgsql-cl1-haproxy.db.acme.example.
+
+            - alert: OrderHubPostgresDiskUsageCritical
+              expr: >-
+                max by (instance) (
+                  (1 - node_filesystem_avail_bytes{
+                    service="order-hub-pgsql-cl1",
+                    environment="prod1",
+                    job="node",
+                    instance=~"order-hub-pgsql-cl1-[0-9]+.*:9100",
+                    fstype!~"^(fuse.*|tmpfs|cifs|nfs)"
+                  }
+                  / node_filesystem_size_bytes{
+                    service="order-hub-pgsql-cl1",
+                    environment="prod1",
+                    job="node",
+                    instance=~"order-hub-pgsql-cl1-[0-9]+.*:9100",
+                    fstype!~"^(fuse.*|tmpfs|cifs|nfs)"
+                  }) * 100
+                ) > 90
+              for: 5m
+              labels:
+                severity: critical
+                source: vmselect
+                service: order-hub-pgsql-cl1
+              annotations:
+                summary: "PostgreSQL disk >90% — {{ $labels.instance }}"
+                description: >-
+                  Утилизация {{ $value | humanize }}% на {{ $labels.instance }}.
+
+        - name: order-hub-postgres-backup
+          interval: 30s
+          rules:
+            - alert: OrderHubPgbackrestIncrementalBackupStale
+              expr: >-
+                pgbackrest_backup_since_last_completion_seconds{
+                  service="order-hub-pgsql-cl1",
+                  environment="prod1",
+                  backup_type="incr"
+                } > 129600
+              for: 1h
+              labels:
+                severity: critical
+                source: vmselect
+                service: order-hub-pgsql-cl1
+              annotations:
+                summary: "PostgreSQL incr backup >36h"
+                description: >-
+                  Последний incr: {{ $value | humanizeDuration }}.
+
+            - alert: OrderHubPgbackrestDiffBackupStale
+              expr: >-
+                pgbackrest_backup_since_last_completion_seconds{
+                  service="order-hub-pgsql-cl1",
+                  environment="prod1",
+                  backup_type="diff"
+                } > 608400
+              for: 1h
+              labels:
+                severity: critical
+                source: vmselect
+                service: order-hub-pgsql-cl1
+              annotations:
+                summary: "PostgreSQL diff backup >7d"
+                description: >-
+                  Последний diff старше 7 дней: {{ $value | humanizeDuration }}.
+
+        # --- Kafka consumer (кластер shared-events-kfk-cl1) ---
+        - name: order-hub-kafka
+          interval: 30s
+          rules:
+            - alert: OrderHubKafkaConsumerLagHigh
+              expr: >-
+                sum(kafka_consumergroup_lag{
+                  environment="prod1",
+                  service="shared-events-kfk-cl1",
+                  topic="orders-status-changed",
+                  consumergroup="kafka_consumer_order_hub_prod"
+                }) > 10000
+              for: 15m
+              labels:
+                severity: warning
+                source: vmselect
+                service: order-hub-kafka
+              annotations:
+                summary: "Kafka lag high — orders-status-changed"
+                description: >-
+                  Lag CG kafka_consumer_order_hub_prod: {{ $value | humanize }}.
+
+        # ClickHouse order-hub-analytics-ch-cl1, БД order_hub_analytics.
+        - name: order-hub-clickhouse-infra
+          interval: 30s
+          rules:
+            - alert: OrderHubClickhouseExporterDown
+              expr: >-
+                up{
+                  service="order-hub-analytics-ch-cl1",
+                  environment="prod1",
+                  job="clickhouse",
+                  instance=~"order-hub-analytics-ch-cl1-[0-9]+.*:9116"
+                } == 0
+              for: 5m
+              labels:
+                severity: critical
+                source: vmselect
+                service: order-hub-analytics-ch-cl1
+              annotations:
+                summary: "ClickHouse exporter down — {{ $labels.instance }}"
+                description: >-
+                  Нода {{ $labels.instance }} кластера order-hub-analytics-ch-cl1 не отвечает.
+                  HAProxy: order-hub-analytics-ch-cl1-haproxy.db.acme.example.
+
+            - alert: OrderHubClickhouseNodeExporterDown
+              expr: >-
+                up{
+                  service="order-hub-analytics-ch-cl1",
+                  environment="prod1",
+                  job="node",
+                  instance=~"order-hub-analytics-ch-cl1-[0-9]+.*:9100"
+                } == 0
+              for: 5m
+              labels:
+                severity: critical
+                source: vmselect
+                service: order-hub-analytics-ch-cl1
+              annotations:
+                summary: "Node exporter down on CH host — {{ $labels.instance }}"
+                description: >-
+                  Нет метрик ОС с {{ $labels.instance }}.
+
+            - alert: OrderHubClickhouseReadonlyReplica
+              expr: >-
+                clickhouse_readonly_replica{
+                  service="order-hub-analytics-ch-cl1",
+                  environment="prod1",
+                  instance=~"order-hub-analytics-ch-cl1-[0-9]+.*:9116"
+                } == 1
+              for: 10m
+              labels:
+                severity: warning
+                source: vmselect
+                service: order-hub-analytics-ch-cl1
+              annotations:
+                summary: "ClickHouse readonly — {{ $labels.instance }}"
+                description: >-
+                  Реплика {{ $labels.instance }} только для чтения.
+
+            - alert: OrderHubClickhouseDiskUsageWarning
+              expr: >-
+                max by (instance) (
+                  (1 - node_filesystem_avail_bytes{
+                    service="order-hub-analytics-ch-cl1",
+                    environment="prod1",
+                    job="node",
+                    instance=~"order-hub-analytics-ch-cl1-[0-9]+.*:9100",
+                    fstype!~"^(fuse.*|tmpfs|cifs|nfs)"
+                  }
+                  / node_filesystem_size_bytes{
+                    service="order-hub-analytics-ch-cl1",
+                    environment="prod1",
+                    job="node",
+                    instance=~"order-hub-analytics-ch-cl1-[0-9]+.*:9100",
+                    fstype!~"^(fuse.*|tmpfs|cifs|nfs)"
+                  }) * 100
+                ) > 80
+              for: 15m
+              labels:
+                severity: warning
+                source: vmselect
+                service: order-hub-analytics-ch-cl1
+              annotations:
+                summary: "ClickHouse disk >80% — {{ $labels.instance }}"
+                description: >-
+                  Утилизация {{ $value | humanize }}% на {{ $labels.instance }}.
+                  HAProxy: order-hub-analytics-ch-cl1-haproxy.db.acme.example.
+
+            - alert: OrderHubClickhouseDiskUsageCritical
+              expr: >-
+                max by (instance) (
+                  (1 - node_filesystem_avail_bytes{
+                    service="order-hub-analytics-ch-cl1",
+                    environment="prod1",
+                    job="node",
+                    instance=~"order-hub-analytics-ch-cl1-[0-9]+.*:9100",
+                    fstype!~"^(fuse.*|tmpfs|cifs|nfs)"
+                  }
+                  / node_filesystem_size_bytes{
+                    service="order-hub-analytics-ch-cl1",
+                    environment="prod1",
+                    job="node",
+                    instance=~"order-hub-analytics-ch-cl1-[0-9]+.*:9100",
+                    fstype!~"^(fuse.*|tmpfs|cifs|nfs)"
+                  }) * 100
+                ) > 90
+              for: 5m
+              labels:
+                severity: critical
+                source: vmselect
+                service: order-hub-analytics-ch-cl1
+              annotations:
+                summary: "ClickHouse disk >90% — {{ $labels.instance }}"
+                description: >-
+                  Утилизация {{ $value | humanize }}% на {{ $labels.instance }}.
+
+serviceMonitor:
+  enabled: true
